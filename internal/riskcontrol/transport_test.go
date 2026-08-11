@@ -29,6 +29,10 @@ type staticSource Snapshot
 
 func (s staticSource) Snapshot() Snapshot { return Snapshot(s) }
 
+type staticCredentialSource string
+
+func (s staticCredentialSource) ResolvedCredentialSource() string { return string(s) }
+
 func TestTransportAuthorizesBeforeCollecting(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -41,6 +45,8 @@ func TestTransportAuthorizesBeforeCollecting(t *testing.T) {
 		{name: "official explicit HTTPS port", requestURL: "https://OPEN.FEISHU.CN:443/open-apis/test", authorization: "Bearer token", wantSignals: true},
 		{name: "unauthenticated", requestURL: "https://open.feishu.cn/open-apis/test", wantSignals: true},
 		{name: "official non-OpenAPI origin", requestURL: "https://accounts.feishu.cn/open-apis/test", authorization: "Bearer token", wantSignals: true},
+		{name: "Feishu MCP", requestURL: "https://mcp.feishu.cn/mcp", wantSignals: true},
+		{name: "Lark MCP", requestURL: "https://mcp.larksuite.com/mcp", wantSignals: true},
 		{name: "off domain", requestURL: "https://example.com/test", authorization: "Bearer token", wantSignals: false},
 		{name: "lookalike", requestURL: "https://open.feishu.cn.evil.example/test", authorization: "Bearer token", wantSignals: false},
 		{name: "plain HTTP", requestURL: "http://open.feishu.cn/test", authorization: "Bearer token", wantSignals: false},
@@ -62,9 +68,10 @@ func TestTransportAuthorizesBeforeCollecting(t *testing.T) {
 			req.Header.Set("Authorization", test.authorization)
 			req.Header.Set(HeaderOSType, "caller-value")
 			req.Header.Set(HeaderProductModel, "caller-value")
+			req.Header.Set(HeaderCredentialSource, "caller-value")
 			req.Header["x-agent-device-type"] = []string{"non-canonical-caller-value"}
 
-			resp, err := NewTransport(base, source).RoundTrip(req)
+			resp, err := NewTransport(base, source, staticCredentialSource("local")).RoundTrip(req)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -81,6 +88,9 @@ func TestTransportAuthorizesBeforeCollecting(t *testing.T) {
 			if got := source.calls.Load(); got != wantCalls {
 				t.Fatalf("Snapshot calls = %d, want %d", got, wantCalls)
 			}
+			if got := received.Get(HeaderCredentialSource); test.wantSignals && got != "local" {
+				t.Fatalf("credential source = %q, want local", got)
+			}
 			if got := req.Header.Get(HeaderOSType); got != "caller-value" {
 				t.Fatalf("caller request OS header = %q, want unchanged", got)
 			}
@@ -89,7 +99,7 @@ func TestTransportAuthorizesBeforeCollecting(t *testing.T) {
 			}
 			if !test.wantSignals {
 				for name := range received {
-					if strings.EqualFold(name, HeaderProductModel) || strings.EqualFold(name, HeaderOSType) {
+					if strings.EqualFold(name, HeaderProductModel) || strings.EqualFold(name, HeaderOSType) || strings.EqualFold(name, HeaderCredentialSource) {
 						t.Fatalf("restricted header leaked as %q", name)
 					}
 				}
@@ -113,7 +123,7 @@ func TestTransportValidatesSourceSnapshot(t *testing.T) {
 	resp, err := NewTransport(base, staticSource{
 		OSType:       OSType("unsupported"),
 		ProductModel: "unsafe\nvalue",
-	}).RoundTrip(req)
+	}, nil).RoundTrip(req)
 	if err != nil {
 		t.Fatal(err)
 	}

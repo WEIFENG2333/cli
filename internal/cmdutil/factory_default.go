@@ -67,6 +67,7 @@ func NewDefault(streams *IOStreams, inv InvocationContext) *Factory {
 		return buildSDKPlatformTransportWithBase(
 			base,
 			bootstrapHostSignalSource(),
+			f.Credential,
 		)
 	})
 
@@ -189,7 +190,7 @@ func cachedHttpClientFunc(f *Factory, workspaceConfig workspaceConfigSource) fun
 
 		hostSignalSource := resolveSDKHostSignalSource(workspaceConfig)
 		shared := transport.Shared()
-		outbound := riskcontrol.NewTransport(shared, hostSignalSource)
+		outbound := riskcontrol.NewTransport(shared, hostSignalSource, f.Credential)
 		platform := buildDirectHTTPTransport(outbound, true)
 		external := buildDirectHTTPTransport(outbound, false)
 		client := &http.Client{
@@ -226,7 +227,7 @@ func cachedLarkClientFunc(f *Factory, workspaceConfig workspaceConfigSource) fun
 		}
 		hostSignalSource := resolveSDKHostSignalSource(workspaceConfig)
 		opts = append(opts, lark.WithHttpClient(&http.Client{
-			Transport:     buildSDKTransport(hostSignalSource),
+			Transport:     buildSDKTransport(hostSignalSource, f.Credential),
 			CheckRedirect: safeRedirectPolicy,
 		}))
 		ep := core.ResolveEndpoints(acct.Brand)
@@ -235,26 +236,28 @@ func cachedLarkClientFunc(f *Factory, workspaceConfig workspaceConfigSource) fun
 	})
 }
 
-func buildSDKTransport(hostSignalSource riskcontrol.Source) http.RoundTripper {
-	return buildSDKTransportWithBase(transport.Shared(), hostSignalSource)
+func buildSDKTransport(hostSignalSource riskcontrol.Source, credentialProvider *credential.CredentialProvider) http.RoundTripper {
+	return buildSDKTransportWithBase(transport.Shared(), hostSignalSource, credentialProvider)
 }
 
 func buildSDKPlatformTransportWithBase(
 	base http.RoundTripper,
 	hostSignalSource riskcontrol.Source,
+	credentialProvider *credential.CredentialProvider,
 ) http.RoundTripper {
-	outbound := riskcontrol.NewTransport(base, hostSignalSource)
+	outbound := riskcontrol.NewTransport(base, hostSignalSource, credentialProvider)
 	return buildSDKHTTPTransport(outbound, true)
 }
 
 func buildSDKTransportWithBase(
 	base http.RoundTripper,
 	hostSignalSource riskcontrol.Source,
+	credentialProvider *credential.CredentialProvider,
 ) http.RoundTripper {
 	// Risk control is the innermost trusted boundary for both request classes.
 	// It therefore observes the final URL and strips extension-supplied reserved
 	// headers immediately before the network transport.
-	outbound := riskcontrol.NewTransport(base, hostSignalSource)
+	outbound := riskcontrol.NewTransport(base, hostSignalSource, credentialProvider)
 	return transport.NewHTTPPolicyRouter(
 		buildSDKHTTPTransport(outbound, true),
 		buildSDKHTTPTransport(outbound, false),

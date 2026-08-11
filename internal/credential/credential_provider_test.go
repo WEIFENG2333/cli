@@ -131,6 +131,9 @@ func TestCredentialProvider_TokenFromExtension(t *testing.T) {
 	if result.Token != "ext_tok" {
 		t.Errorf("expected ext_tok, got %s", result.Token)
 	}
+	if got := cp.ResolvedCredentialSource(); got != "env" {
+		t.Errorf("ResolvedCredentialSource() = %q, want env", got)
+	}
 }
 
 func TestCredentialProvider_TokenFallsToDefault(t *testing.T) {
@@ -144,6 +147,21 @@ func TestCredentialProvider_TokenFallsToDefault(t *testing.T) {
 	}
 	if result.Token != "default_tok" {
 		t.Errorf("expected default_tok, got %s", result.Token)
+	}
+	if got := cp.ResolvedCredentialSource(); got != "local" {
+		t.Errorf("ResolvedCredentialSource() = %q, want local", got)
+	}
+}
+
+func TestExtensionCredentialSource(t *testing.T) {
+	for _, test := range []struct{ provider, want string }{
+		{provider: "sidecar", want: "sidecar"},
+		{provider: "custom", want: "extension"},
+	} {
+		source := extensionTokenSource{provider: &mockExtProvider{name: test.provider}}
+		if got := source.CredentialSource(); got != test.want {
+			t.Errorf("provider %q source = %q, want %q", test.provider, got, test.want)
+		}
 	}
 }
 

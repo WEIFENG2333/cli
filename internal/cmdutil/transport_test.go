@@ -108,7 +108,7 @@ func TestBuildSDKTransportAppliesSecurityHeadersToEveryRequestClass(t *testing.T
 		exttransport.RequestClassExternal,
 	} {
 		client := internaltransport.ClientForRequestClass(
-			&http.Client{Transport: buildSDKTransport(nil)},
+			&http.Client{Transport: buildSDKTransport(nil, nil)},
 			class,
 		)
 		resp, err := client.Get(server.URL)
@@ -144,7 +144,7 @@ func TestBuildSDKTransport_WithExtension(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	client := internaltransport.ClientForRequestClass(
-		&http.Client{Transport: buildSDKTransport(nil)},
+		&http.Client{Transport: buildSDKTransport(nil, nil)},
 		exttransport.RequestClassPlatform,
 	)
 	resp, err := client.Get(server.URL)
@@ -162,10 +162,10 @@ func TestBuildSDKTransport_WithoutExtension(t *testing.T) {
 	exttransport.Register(nil)
 	t.Cleanup(func() { exttransport.Register(previous) })
 
-	if _, ok := buildSDKTransport(nil).(*internaltransport.HTTPPolicyRouter); !ok {
+	if _, ok := buildSDKTransport(nil, nil).(*internaltransport.HTTPPolicyRouter); !ok {
 		t.Fatalf(
 			"buildSDKTransport() type = %T, want *transport.HTTPPolicyRouter",
-			buildSDKTransport(nil),
+			buildSDKTransport(nil, nil),
 		)
 	}
 }
@@ -177,7 +177,7 @@ func TestBuildSDKTransportSupportsPolicyLeafCloning(t *testing.T) {
 
 	base := &http.Transport{}
 	client := internaltransport.ClientForRequestClass(
-		&http.Client{Transport: buildSDKTransportWithBase(base, nil)},
+		&http.Client{Transport: buildSDKTransportWithBase(base, nil, nil)},
 		exttransport.RequestClassExternal,
 	)
 	source, ok := client.Transport.(interface {
@@ -384,7 +384,7 @@ func TestBuildSDKTransport_StripsExtensionRiskHeaders(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer token")
 
 	client := internaltransport.ClientForRequestClass(
-		&http.Client{Transport: buildSDKTransportWithBase(network, nil)},
+		&http.Client{Transport: buildSDKTransportWithBase(network, nil, nil)},
 		exttransport.RequestClassPlatform,
 	)
 	resp, err := client.Do(req)

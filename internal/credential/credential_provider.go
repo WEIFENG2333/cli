@@ -33,6 +33,7 @@ var (
 
 type credentialSource interface {
 	Name() string
+	CredentialSource() string
 	TryResolveToken(ctx context.Context, req TokenSpec) (*TokenResult, bool, error)
 	ResolveIdentityHint(ctx context.Context, acct *Account) (*IdentityHint, error)
 }
@@ -42,6 +43,15 @@ type extensionTokenSource struct {
 }
 
 func (s extensionTokenSource) Name() string { return s.provider.Name() }
+
+func (s extensionTokenSource) CredentialSource() string {
+	switch s.Name() {
+	case "env", "sidecar":
+		return s.Name()
+	default:
+		return "extension"
+	}
+}
 
 func (s extensionTokenSource) TryResolveToken(ctx context.Context, req TokenSpec) (*TokenResult, bool, error) {
 	tok, err := s.provider.ResolveToken(ctx, extcred.TokenSpec{
@@ -86,7 +96,8 @@ type defaultTokenSource struct {
 	resolver DefaultTokenResolver
 }
 
-func (s defaultTokenSource) Name() string { return "default" }
+func (s defaultTokenSource) Name() string             { return "default" }
+func (s defaultTokenSource) CredentialSource() string { return "local" }
 
 func (s defaultTokenSource) TryResolveToken(ctx context.Context, req TokenSpec) (*TokenResult, bool, error) {
 	if s.resolver == nil {
@@ -140,6 +151,8 @@ type CredentialProvider struct {
 	account        *Account
 	accountErr     error
 	selectedSource credentialSource
+	resolvedMu     sync.RWMutex
+	resolvedSource string
 
 	hintOnce sync.Once
 	hint     *IdentityHint
@@ -224,6 +237,7 @@ func (p *CredentialProvider) enrichUserInfo(ctx context.Context, acct *Account, 
 	if !found {
 		return nil
 	}
+	p.setResolvedCredentialSource(source.CredentialSource())
 	// Have UAT — must verify and resolve identity
 	hc, err := p.httpClient()
 	if err != nil {
@@ -254,7 +268,7 @@ func (p *CredentialProvider) selectedCredentialSource(ctx context.Context) (cred
 	return p.selectedSource, nil
 }
 
-func resolveTokenFromSource(ctx context.Context, source credentialSource, req TokenSpec) (*TokenResult, error) {
+func (p *CredentialProvider) resolveTokenFromSource(ctx context.Context, source credentialSource, req TokenSpec) (*TokenResult, error) {
 	result, found, err := source.TryResolveToken(ctx, req)
 	if err != nil {
 		return nil, err
@@ -262,6 +276,7 @@ func resolveTokenFromSource(ctx context.Context, source credentialSource, req To
 	if !found {
 		return nil, &TokenUnavailableError{Source: source.Name(), Type: req.Type}
 	}
+	p.setResolvedCredentialSource(source.CredentialSource())
 	return result, nil
 }
 
@@ -307,7 +322,7 @@ func (p *CredentialProvider) ResolveToken(ctx context.Context, req TokenSpec) (*
 		return nil, err
 	}
 	if source != nil {
-		return resolveTokenFromSource(ctx, source, req)
+		return p.resolveTokenFromSource(ctx, source, req)
 	}
 
 	for _, prov := range p.providers {
@@ -317,6 +332,7 @@ func (p *CredentialProvider) ResolveToken(ctx context.Context, req TokenSpec) (*
 			return nil, err
 		}
 		if found {
+			p.setResolvedCredentialSource(source.CredentialSource())
 			return result, nil
 		}
 	}
@@ -326,9 +342,30 @@ func (p *CredentialProvider) ResolveToken(ctx context.Context, req TokenSpec) (*
 		return nil, err
 	}
 	if found {
+		p.setResolvedCredentialSource(source.CredentialSource())
 		return result, nil
 	}
 	return nil, &TokenUnavailableError{Type: req.Type}
+}
+
+// ResolvedCredentialSource returns the source of the last successfully resolved
+// token. It is empty before token resolution succeeds.
+func (p *CredentialProvider) ResolvedCredentialSource() string {
+	if p == nil {
+		return ""
+	}
+	p.resolvedMu.RLock()
+	defer p.resolvedMu.RUnlock()
+	return p.resolvedSource
+}
+
+func (p *CredentialProvider) setResolvedCredentialSource(source string) {
+	if source == "" {
+		return
+	}
+	p.resolvedMu.Lock()
+	defer p.resolvedMu.Unlock()
+	p.resolvedSource = source
 }
 
 // ActiveExtensionProviderName reports whether an extension provider is managing
