@@ -59,6 +59,35 @@ func TestBuildAPIError_NilAndZeroCode(t *testing.T) {
 	}
 }
 
+func TestBuildAPIError_WikiPermissionDeniedUsesTerminalRecoveryOnlyForWikiCode(t *testing.T) {
+	wikiErr := errclass.BuildAPIError(map[string]any{
+		"code": 131006,
+		"msg":  "permission denied: node permission denied, user needs read permission.",
+	}, errclass.ClassifyContext{Identity: "user"})
+	wikiProblem, ok := errs.ProblemOf(wikiErr)
+	if !ok {
+		t.Fatalf("expected typed wiki permission error, got %T: %v", wikiErr, wikiErr)
+	}
+	if wikiProblem.Category != errs.CategoryAuthorization || wikiProblem.Subtype != errs.SubtypePermissionDenied || wikiProblem.Code != 131006 {
+		t.Fatalf("wiki problem = %#v, want authorization/permission_denied/131006", wikiProblem)
+	}
+	if !strings.Contains(wikiProblem.Hint, "resource access, not app scope authorization") || !strings.Contains(wikiProblem.Hint, "Do not retry the same request") {
+		t.Fatalf("wiki hint = %q, want terminal resource-access recovery", wikiProblem.Hint)
+	}
+
+	nonWikiErr := errclass.BuildAPIError(map[string]any{
+		"code": 1470403,
+		"msg":  "task permission denied",
+	}, errclass.ClassifyContext{Identity: "user"})
+	nonWikiProblem, ok := errs.ProblemOf(nonWikiErr)
+	if !ok {
+		t.Fatalf("expected typed non-wiki permission error, got %T: %v", nonWikiErr, nonWikiErr)
+	}
+	if strings.Contains(nonWikiProblem.Hint, "target wiki space or node") || strings.Contains(nonWikiProblem.Hint, "Do not retry the same request") {
+		t.Fatalf("non-wiki hint = %q, must not inherit wiki-only guidance", nonWikiProblem.Hint)
+	}
+}
+
 // matchesTypedError reports whether err is the typed-error variant identified by
 // wantTyped (e.g. "ValidationError" → *errs.ValidationError). Used by the
 // ExitCode matrix so a wrong-Category routing (e.g. CategoryValidation falling

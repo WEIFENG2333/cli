@@ -8,6 +8,7 @@ import (
 
 	"github.com/larksuite/cli/errs"
 	"github.com/larksuite/cli/internal/core"
+	"github.com/larksuite/cli/internal/errclass"
 	"github.com/larksuite/cli/shortcuts/common"
 )
 
@@ -33,6 +34,9 @@ func appendWikiProblemHint(err error, hint string) error {
 		return err
 	}
 	if p, ok := errs.ProblemOf(err); ok {
+		if strings.Contains(p.Hint, hint) {
+			return err
+		}
 		if strings.TrimSpace(p.Hint) != "" {
 			p.Hint = p.Hint + "\n" + hint
 		} else {
@@ -47,5 +51,5 @@ func appendWikiProblemHint(err error, hint string) error {
 // upstream message is informational and normalized by the shared classifier.
 // Keep the command hint accurate without branching on that unstable text.
 func wikiPermissionDeniedHint() string {
-	return "The current user or app/bot identity lacks access to the target wiki space or node. This is resource access, not app scope authorization. Do not retry the same request, reauthorize, or switch identity as trial and error; ask the resource owner or wiki administrator to grant read access, or use an accessible resource."
+	return errclass.WikiPermissionDeniedHint()
 }

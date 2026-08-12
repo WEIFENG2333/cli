@@ -486,6 +486,46 @@ func TestDriveInspectExecute_WikiURL(t *testing.T) {
 	}
 }
 
+func TestDriveInspectExecute_WikiPermissionDeniedUsesTerminalGuidance(t *testing.T) {
+	cfg := driveTestConfig()
+	f, stdout, _, reg := cmdutil.TestFactory(t, cfg)
+
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "/open-apis/wiki/v2/spaces/get_node",
+		Body: map[string]interface{}{
+			"code":   131006,
+			"msg":    "permission denied: node permission denied, user needs read permission.",
+			"log_id": "log-drive-inspect-wiki-permission",
+		},
+	})
+
+	err := mountAndRunDrive(t, DriveInspect, []string{
+		"+inspect",
+		"--url", "https://xxx.feishu.cn/wiki/wikcnABC",
+		"--as", "user",
+	}, f, stdout)
+	if err == nil {
+		t.Fatal("expected permission error")
+	}
+	p, ok := errs.ProblemOf(err)
+	if !ok {
+		t.Fatalf("expected typed error, got %T: %v", err, err)
+	}
+	if p.Category != errs.CategoryAuthorization || p.Subtype != errs.SubtypePermissionDenied || p.Code != 131006 {
+		t.Fatalf("problem = %#v, want authorization/permission_denied/131006", p)
+	}
+	if p.Retryable {
+		t.Fatalf("problem retryable = true, want false: %#v", p)
+	}
+	if !strings.Contains(p.Hint, "resource access, not app scope authorization") || !strings.Contains(p.Hint, "Do not retry the same request") {
+		t.Fatalf("hint = %q, want terminal wiki resource-access guidance", p.Hint)
+	}
+	if strings.Count(p.Hint, "Do not retry the same request") != 1 {
+		t.Fatalf("hint = %q, want terminal guidance exactly once", p.Hint)
+	}
+}
+
 func TestDriveInspectExecute_WikiGetNodeIncompleteData(t *testing.T) {
 	cfg := driveTestConfig()
 	f, stdout, _, reg := cmdutil.TestFactory(t, cfg)

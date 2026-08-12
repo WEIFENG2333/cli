@@ -324,6 +324,9 @@ func buildPermissionErrorFromFacts(p errs.Problem, missing []string, cc Classify
 	// any server detail lifted into p.Hint (the opposite precedence from the
 	// CategoryAPI arm, where the lifted detail wins).
 	hint := permissionRecoveryHint(missing, identity, p.Subtype, consoleURL)
+	if wikiHint, ok := wikiPermissionRecoveryForCode(p.Code); ok {
+		hint = wikiHint
+	}
 	p.Hint = hint.String()
 	permErr := &errs.PermissionError{
 		Problem:       p,
